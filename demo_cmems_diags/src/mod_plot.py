@@ -1,6 +1,7 @@
 import hvplot.xarray
 from matplotlib import pyplot as plt
 import numpy as np
+import xarray as xr
 import cartopy.crs as ccrs
 
 def plot_maps(dataset, title=''):
@@ -69,11 +70,11 @@ def compare_identification(ace1, ce1, title1, ace2, ce2, title2, lon_min=-180, l
     ax.set_xlim(lon_min, lon_max)
     ax.set_ylim(lat_min, lat_max)
     if ds_chloro is not None:
-        ds_sel = ds_chloro.where((ds_chloro.longitude>=lon_min) & (ds_chloro.longitude<=lon_max),drop=True)
-        ds_sel = ds_sel.where((ds_sel.latitude>=lat_min) & (ds_sel.latitude<=lat_max),drop=True)
+        ds_sel = ds_chloro.where((ds_chloro.lon>=lon_min) & (ds_chloro.lon<=lon_max),drop=True)
+        ds_sel = ds_sel.where((ds_sel.lat>=lat_min) & (ds_sel.lat<=lat_max),drop=True)
         vmin = np.nanpercentile(ds_sel['CHL'], 5.)
         vmax = np.nanpercentile(ds_sel['CHL'], 95.)
-        c = ax.contourf(ds_sel['longitude'], ds_sel['latitude'], ds_sel['CHL'][:, :], cmap='viridis', levels=np.linspace(vmin, vmax, 100), extend='both', antialiased=True)
+        c = ax.contourf(ds_sel['lon'], ds_sel['lat'], ds_sel['CHL'][:, :], cmap='viridis', levels=np.linspace(vmin, vmax, 100), extend='both', antialiased=True)
         plt.colorbar(c, label=' Chloro [milligram m-3]')
     ace1.display(ax, label=f"Anticyclonic contour ({title1})", color="k", lw=1.5)
     ace2.display(ax, label=f"Anticyclonic contour ({title2})", color="lime", lw=1.5)
@@ -136,4 +137,82 @@ def compare_identification_stats(ac1, c1, title1, ac2, c2, title2):
     ax_cum.legend()
     
     plt.show()
+    
+    
+    
+### PLOT SCORE
+def plot_map_scores(filename):
+    
+    ds_score = xr.open_dataset(filename, group='diff')
+    rmse_map = ds_score['rmse']
+    error_variance_map = ds_score['variance']
+    std_alongtrack = np.sqrt(error_variance_map)
+    
+    ds_score = xr.open_dataset(filename, group='alongtrack')
+    rms_alongtrack = ds_score['rms']
+    variance_alongtrack = ds_score['variance']
+    mean_alongtrack = ds_score['mean']
+    
+    ds_score = xr.open_dataset(filename, group='maps')
+    mean_map = ds_score['mean']
+    
+    
+    
+    rmse_score = 1. - rmse_map/rms_alongtrack
+    rmse_score.name = 'rmse_score'
+    
+    variance_score = 1. - error_variance_map/variance_alongtrack
+    variance_score.name = 'variance_score'
+    
+    bias = mean_map - mean_alongtrack
+    bias.name = 'bias'
+    vmin_bias = np.nanpercentile(bias, 5)
+    vmax_bias = np.nanpercentile(bias, 95)
+    
+    normalized_bias = (mean_map - mean_alongtrack)/std_alongtrack
+    normalized_bias.name = 'normalized_bias'
+    vmin_normalized_bias = np.nanpercentile(normalized_bias, 5)
+    vmax_normalized_bias = np.nanpercentile(normalized_bias, 95)
+    
+    return (rmse_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='RMSE score') + \
+            variance_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='Variance score') + \
+            bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_bias, vmax_bias), cmap='coolwarm', title='Bias') +\
+            normalized_bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_normalized_bias, vmax_normalized_bias), cmap='coolwarm', title='Normalized Bias')
+           ).cols(2)
+
+
+def plot_timeseries_scores(filename):
+    
+    ds_score = xr.open_dataset(filename, group='diff')
+    rmse_map = ds_score['rms']
+    error_variance_map = ds_score['variance']
+    std_alongtrack = np.sqrt(error_variance_map)
+    
+    ds_score = xr.open_dataset(filename, group='alongtrack')
+    rms_alongtrack = ds_score['rms']
+    variance_alongtrack = ds_score['variance']
+    mean_alongtrack = ds_score['mean']
+    
+    ds_score = xr.open_dataset(filename, group='maps')
+    mean_map = ds_score['mean']
+    
+    
+    
+    rmse_score = 1. - rmse_map/rms_alongtrack
+    rmse_score.name = 'rmse_score'
+    
+    variance_score = 1. - error_variance_map/variance_alongtrack
+    variance_score.name = 'variance_score'
+    
+    bias = mean_map - mean_alongtrack
+    bias.name = 'bias'
+    
+    normalized_bias = (mean_map - mean_alongtrack)/std_alongtrack
+    normalized_bias.name = 'normalized_bias'
+    
+    return (rmse_score.hvplot.line(x='time', title='RMSE score', ylim=(0, 1), grid=True, color='k') + \
+            variance_score.hvplot.line(x='time', title='Variance score', ylim=(0, 1), grid=True, color='royalblue') + \
+            bias.hvplot.line(x='time', title='Bias', grid=True, color='mediumaquamarine') +\
+            normalized_bias.hvplot.line(x='time', title='Normalized Bias', grid=True, color='salmon')
+           ).cols(2)
     
