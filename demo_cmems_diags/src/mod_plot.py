@@ -6,7 +6,7 @@ import cartopy.crs as ccrs
 
 def plot_maps(dataset, title=''):
     
-    return dataset.hvplot.quadmesh(x='longitude', y='latitude', cmap='jet', title=title)
+    return dataset.hvplot.quadmesh(x='longitude', y='latitude', title=title, clim=(-0.8, 0.8), cmap='RdYlBu_r', rasterize=True)
 
 
 def display_identification(ace, ce, lon_min=-180, lon_max=180, lat_min=-80, lat_max=90):
