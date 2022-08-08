@@ -70,10 +70,10 @@ class TimeSeries:
         return pyinterp.backends.xarray.Grid3D(data_array)
     
     
-def periods(df, time_series, frequency='W'):
+def periods(df, time_series, var_name="sla_unfiltered", frequency='W'):
     """Return the list of periods covering the time series loaded in memory."""
     period_start = df.groupby(
-        df.index.to_period(frequency))["sla_unfiltered"].count().index
+        df.index.to_period(frequency))[var_name].count().index
 
     for start, end in zip(period_start, period_start[1:]):
         start = start.to_timestamp()
@@ -97,6 +97,7 @@ def interpolate(df, time_series, start, end):
         interpolator="inverse_distance_weighting",
         num_threads=0)
     
+    
 def run_interpolation(ds_maps, ds_alongtrack, frequency='M'):
     
     time_series = TimeSeries(ds_maps)
@@ -108,4 +109,70 @@ def run_interpolation(ds_maps, ds_alongtrack, frequency='M'):
         
     ds = df.to_xarray()
         
+    return ds
+
+
+def interpolate_current(df, time_series, start, end):
+    """Interpolate the time series over the defined period."""
+    interpolator = time_series.load_dataset("ugos", start, end)
+    mask = (df.index >= start) & (df.index < end)
+    selected = df.loc[mask, ["longitude", "latitude"]]
+    df.loc[mask, ["ugos_interpolated"]] = interpolator.trivariate(
+        dict(longitude=selected["longitude"].values,
+             latitude=selected["latitude"].values,
+             time=selected.index.values),
+        interpolator="inverse_distance_weighting",
+        num_threads=0)
+    
+    interpolator = time_series.load_dataset("vgos", start, end)
+    mask = (df.index >= start) & (df.index < end)
+    selected = df.loc[mask, ["longitude", "latitude"]]
+    df.loc[mask, ["vgos_interpolated"]] = interpolator.trivariate(
+        dict(longitude=selected["longitude"].values,
+             latitude=selected["latitude"].values,
+             time=selected.index.values),
+        interpolator="inverse_distance_weighting",
+        num_threads=0)
+
+
+def reformat_drifter_dataset(ds):
+    
+    ds = ds.isel(DEPTH=1)
+    lat = ds['LATITUDE'].values
+    lon = ds['LONGITUDE'].values
+    drop_vars = ['TIME_QC', 'POSITION_QC', 'DEPH_QC', 'EWCT_QC', 'NSCT_QC', 'EWCT_WS_QC', 'NSCT_WS_QC', 'WS_TYPE_OF_PROCESSING', 'TEMP', 'TEMP_QC', 'LONGITUDE', 'LATITUDE']
+    ds = ds.drop_vars(drop_vars)
+    ds = ds.rename({'TIME':'time'})
+    ds['longitude'] = (("time"), lon)
+    ds['latitude'] = (("time"), lat)
+    ds['sensor_id'] = (("time"), ds.platform_code*numpy.ones(ds['time'].size))
+    return ds
+
+
+def run_interpolation_drifters(ds_maps, list_filename_drifters, time_min, time_max, frequency='M'):
+    
+    time_series = TimeSeries(ds_maps)
+    
+    # Load drifters data file and reformat dataset
+    list_of_ds = []
+    for drifters_filename in list_filename_drifters:
+        ds_drifter = xr.open_dataset(drifters_filename)
+        ds_drifter = reformat_drifter_dataset(ds_drifter)
+        try:        
+            ds_drifter = ds_drifter.where((ds_drifter.time >= numpy.datetime64(time_min)) & (ds_drifter.time <=  numpy.datetime64(time_max)), drop=True)
+            list_of_ds.append(ds_drifter)
+        except IndexError:
+            # there is gap in dataset
+            pass
+        del ds_drifter
+
+    ds_out = xr.concat(list_of_ds, dim='time')
+    
+    # Convert to dataframe and interpolate
+    df = ds_out.to_dataframe()
+    for start, end in periods(df, time_series, var_name='NSCT', frequency=frequency):
+        interpolate_current(df, time_series, start, end)
+        
+    ds = df.to_xarray()
+    
     return ds

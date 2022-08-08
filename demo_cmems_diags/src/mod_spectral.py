@@ -5,6 +5,7 @@ import pyinterp
 import xarray as xr
 import hvplot.xarray
 import logging
+import cartopy.crs as ccrs
 
 def compute_median_dx(dataset):
         
@@ -39,23 +40,25 @@ def compute_median_lon_lat(vlon, vlat, sub_segment_point, npt):
     return median_lon_sub_segment, median_lat_sub_segment
 
 
-def compute_segment(ds_interp, lenght_scale):
+def compute_segment(ds_interp, npt, ref_var_name='sla_unfiltered', study_var_name='msla_interpolated', max_time_gap=np.timedelta64(2, 's'), segment_overlapping=0.25):
     
     ds_interp = ds_interp.sortby('time').dropna('time')
     
     lon_along_track = ds_interp['longitude'].values
     lat_along_track = ds_interp['latitude'].values
-    sla = ds_interp['sla_unfiltered'].values
-    msla = ds_interp['msla_interpolated'].values
+    sla = ds_interp[ref_var_name].values
+    msla = ds_interp[study_var_name].values
+        
+    indi = np.where((np.diff(ds_interp['time']) > max_time_gap))[0]
+    if len(indi) > 0:
+        track_segment_lenght = np.insert(np.diff(indi), [0], indi[0])
+        selected_track_segment = np.where(track_segment_lenght >= npt)[0]
+    else:
+        selected_track_segment = np.asarray([])
     
-    delta_x = compute_median_dx(ds_interp) # in km
-    npt = int(lenght_scale / delta_x)
-    
-    segment_overlapping = 0.25
-    
-    indi = np.where((np.diff(ds_interp['time']) > np.timedelta64(2, 's')))[0]
-    track_segment_lenght = np.insert(np.diff(indi), [0], indi[0])
-    selected_track_segment = np.where(track_segment_lenght >= npt)[0]
+    # indi = np.where((np.diff(ds_interp['time']) > max_time_gap))[0]
+    # track_segment_lenght = np.insert(np.diff(indi), [0], indi[0])
+    # selected_track_segment = np.where(track_segment_lenght >= npt)[0]
 
     list_lat_segment = []
     list_lon_segment = []
@@ -85,13 +88,13 @@ def compute_segment(ds_interp, lenght_scale):
 
                 sla_segment = sla[sub_segment_point:sub_segment_point + npt]
                 msla_segment = msla[sub_segment_point:sub_segment_point + npt]
-            
+                
                 list_sla_segment.append(sla_segment)
                 list_lon_segment.append(mean_lon_sub_segment)
                 list_lat_segment.append(mean_lat_sub_segment)
                 list_msla_segment.append(msla_segment)
                 
-    return np.asarray(list_lon_segment), np.asarray(list_lat_segment), np.asarray(list_sla_segment), np.asarray(list_msla_segment), delta_x, npt
+    return np.asarray(list_lon_segment), np.asarray(list_lat_segment), np.asarray(list_sla_segment), np.asarray(list_msla_segment)
 
 
 def spectral_computation(lon_segment, lat_segment, ref_segments, study_segments, delta_x, npt):
@@ -99,7 +102,7 @@ def spectral_computation(lon_segment, lat_segment, ref_segments, study_segments,
 
     delta_lat = 5.
     delta_lon = 5.
-    nb_min_segment = 10
+    nb_min_segment = 2
     vlon = np.arange(0., 360., 1.)
     vlat = np.arange(-80., 91., 1)
 
@@ -199,17 +202,33 @@ def spectral_computation(lon_segment, lat_segment, ref_segments, study_segments,
 
             else:
 
-                list_mean_frequency.append(np.zeros((int(npt / 2) + 1)))
-                list_mean_psd_ref.append(np.zeros((int(npt / 2) + 1)))
+                list_mean_frequency.append(np.zeros(npt))
+                list_mean_psd_ref.append(np.zeros(npt))
                 list_nb_segment.append(0.)
+                list_mean_psd_study.append(np.zeros(npt))
+                list_mean_psd_diff_study_ref.append(np.zeros(npt))
+                list_mean_coherence.append(np.zeros(npt))
+                list_mean_cross_spectrum.append(np.zeros(npt))
+                
+#                 list_mean_frequency.append(np.zeros((int(npt / 2) + 1)))
+#                 list_mean_psd_ref.append(np.zeros((int(npt / 2) + 1)))
+#                 list_nb_segment.append(0.)
 
-                list_mean_psd_study.append(np.zeros((int(npt / 2) + 1)))
-                list_mean_psd_diff_study_ref.append(np.zeros((int(npt / 2) + 1)))
-                list_mean_coherence.append(np.zeros((int(npt / 2) + 1)))
-                list_mean_cross_spectrum.append(np.zeros((int(npt / 2) + 1)))
+#                 list_mean_psd_study.append(np.zeros((int(npt / 2) + 1)))
+#                 list_mean_psd_diff_study_ref.append(np.zeros((int(npt / 2) + 1)))
+#                 list_mean_coherence.append(np.zeros((int(npt / 2) + 1)))
+#                 list_mean_cross_spectrum.append(np.zeros((int(npt / 2) + 1)))
 
-    wavenumber = np.ma.mean(np.ma.masked_invalid(np.ma.masked_where(np.asarray(list_mean_frequency) == 0,
-                                                              np.asarray(list_mean_frequency))), axis=0).filled(0.)
+    wavenumber = np.asarray(list_mean_frequency)
+    wavenumber = np.ma.masked_where(wavenumber == 0., wavenumber)
+    try:
+        wavenumber = np.ma.masked_invalid(wavenumber)
+        wavenumber =  np.ma.mean(wavenumber, axis=0).filled(0.)
+    except:
+        wavenumber =  np.ma.mean(wavenumber, axis=0)
+        
+    # wavenumber = np.ma.mean(np.ma.masked_invalid(np.ma.masked_where(np.asarray(list_mean_frequency) == 0,
+    #                                                           np.asarray(list_mean_frequency))), axis=0).filled(0.)
     
     nb_segment = np.asarray(list_nb_segment).reshape((vlat.size, vlon.size))
     psd_ref = np.transpose(np.asarray(list_mean_psd_ref)).reshape((wavenumber.size, vlat.size, vlon.size))
@@ -272,18 +291,23 @@ def compute_resolution(lon, lat, wavenumber, psd_diff, psd_ref):
     return resolution
 
 
-def write_psd_output(output_netcdf_file, wavenumber, vlat, vlon, nb_segment, psd_ref, psd_study, psd_diff_ref_study, coherence, cross_spectrum):
+def write_psd_output(output_netcdf_file, wavenumber, vlat, vlon, nb_segment, psd_ref, psd_study, psd_diff_ref_study, coherence, cross_spectrum, one_sided=True):
 
     nc_out = Dataset(output_netcdf_file, 'w', format='NETCDF4')
     
-    nc_out.createDimension('wavenumber', wavenumber.size)
+    if one_sided:
+        positive_index = np.where(wavenumber >=0)[0]
+    else:
+        positive_index = np.arange(wavenumber.size)
+    
+    nc_out.createDimension('wavenumber', wavenumber[positive_index].size)
     nc_out.createDimension('lat', vlat.size)
     nc_out.createDimension('lon', vlon.size)
 
     wavenumber_out = nc_out.createVariable('wavenumber', 'f8', 'wavenumber', zlib=True)
     wavenumber_out.units = "1/km"
     wavenumber_out.axis = 'T'
-    wavenumber_out[:] = wavenumber
+    wavenumber_out[:] = wavenumber[positive_index]
 
     nb_segment_out = nc_out.createVariable('nb_segment', 'f8', ('lat', 'lon'), zlib=True)
     nb_segment_out.long_name = "number of segment used in spectral computation"
@@ -300,21 +324,21 @@ def write_psd_output(output_netcdf_file, wavenumber, vlat, vlon, nb_segment, psd
     psd_ref_out.units = 'm2/km'
     psd_ref_out.coordinates = "wavenumber lat lon"
     psd_ref_out.long_name = "power spectrum density reference field"
-    psd_ref_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_ref == 0, psd_ref)).filled(np.nan)
+    psd_ref_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_ref == 0, psd_ref)).filled(np.nan)[positive_index, :, :]
     
     psd_study_out = nc_out.createVariable('psd_study', 'f8', ('wavenumber', 'lat', 'lon'), zlib=True)
     psd_study_out.units = 'm2/km'
     psd_study_out.coordinates = "wavenumber lat lon"
     psd_study_out.long_name = "power spectrum density study field"
-    psd_study_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_study == 0, psd_study)).filled(np.nan)
+    psd_study_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_study == 0, psd_study)).filled(np.nan)[positive_index, :, :]
     
     psd_diff = nc_out.createVariable('psd_diff', 'f8', ('wavenumber', 'lat', 'lon'), zlib=True)
     psd_diff.units = 'm2/km'
     psd_diff.coordinates = "wavenumber lat lon"
     psd_diff.long_name = "power spectrum density of difference study minus reference field"
-    psd_diff[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_diff_ref_study == 0, psd_diff_ref_study))
+    psd_diff[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(psd_diff_ref_study == 0, psd_diff_ref_study))[positive_index, :, :]
     
-    resolution = compute_resolution(vlon, vlat, wavenumber, psd_diff_ref_study, psd_ref)
+    resolution = compute_resolution(vlon, vlat, wavenumber[positive_index], psd_diff_ref_study[positive_index, :, :], psd_ref[positive_index, :, :])
     resolution_out = nc_out.createVariable('effective_resolution', 'f8', ('lat', 'lon'), zlib=True)
     resolution_out.units = 'km'
     resolution_out.coordinates = "lat lon"
@@ -322,18 +346,18 @@ def write_psd_output(output_netcdf_file, wavenumber, vlat, vlon, nb_segment, psd
     resolution_out[:, :] = np.ma.masked_invalid(np.ma.masked_where(resolution == 0, resolution)).filled(np.nan)
 
     coherence_out = nc_out.createVariable('coherence', 'f8', ('wavenumber', 'lat', 'lon'), zlib=True)
-    coherence_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(coherence == 0, coherence)).filled(np.nan)
+    coherence_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(coherence == 0, coherence)).filled(np.nan)[positive_index, :, :]
     coherence_out.coordinates = "wavenumber lat lon"
     coherence_out.long_name = "magnitude squared coherence between reference and study fields"
 
     cross_spectrum_real_out = nc_out.createVariable('cross_spectrum_real', 'f8', ('wavenumber', 'lat', 'lon'),
                                                         zlib=True)
-    cross_spectrum_real_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(np.real(cross_spectrum) == 0., np.real(cross_spectrum))).filled(np.nan)
+    cross_spectrum_real_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(np.real(cross_spectrum) == 0., np.real(cross_spectrum))).filled(np.nan)[positive_index, :, :]
     cross_spectrum_real_out.coordinates = "wavenumber lat lon"
     cross_spectrum_real_out.long_name = "real part of cross_spectrum between reference and study fields"
     cross_spectrum_imag_out = nc_out.createVariable('cross_spectrum_imag', 'f8', ('wavenumber', 'lat', 'lon'),
                                                         zlib=True)
-    cross_spectrum_imag_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(np.imag(cross_spectrum) == 0., np.imag(cross_spectrum))).filled(np.nan)
+    cross_spectrum_imag_out[:, :, :] = np.ma.masked_invalid(np.ma.masked_where(np.imag(cross_spectrum) == 0., np.imag(cross_spectrum))).filled(np.nan)[positive_index, :, :]
     cross_spectrum_imag_out.coordinates = "wavenumber lat lon"
     cross_spectrum_imag_out.long_name = "imaginary part of cross_spectrum between reference and study fields"
 
@@ -343,13 +367,15 @@ def write_psd_output(output_netcdf_file, wavenumber, vlat, vlon, nb_segment, psd
 def compute_psd_scores(ds_interp, output_filename, lenght_scale=1500. ):
     
     logging.info('Segment computation...')
-    lon_segment, lat_segment, sla_segment, msla_segment, delta_x, npt = compute_segment(ds_interp, lenght_scale)
+    delta_x = compute_median_dx(ds_interp) # in km
+    npt = int(lenght_scale / delta_x)
+    lon_segment, lat_segment, sla_segment, msla_segment = compute_segment(ds_interp, npt)
     
     logging.info('Spectral analysis...')
     wavenumber, vlat, vlon, nb_segment, psd_ref, psd_study, psd_diff, coherence, cross_spectrum = spectral_computation(lon_segment,
                                                                                                                        lat_segment,
-                                                                                                                       sla_segment,
-                                                                                                                       msla_segment, 
+                                                                                                                       sla_segment + 1j*np.zeros(np.shape(sla_segment)),
+                                                                                                                       msla_segment + 1j*np.zeros(np.shape(msla_segment)), 
                                                                                                                        delta_x,
                                                                                                                        npt
                                                                                                                       )
@@ -362,6 +388,7 @@ def plot_psd_scores(filename):
     
     ds_psd = xr.open_dataset(filename)
     ds_psd['wavelenght'] = 1./ds_psd['wavenumber']
+    ds_psd['wavelenght'].attrs['units'] = 'km'
     ds_psd = ds_psd.assign_coords(wavelenght=ds_psd['wavelenght'])
     
     fig1 = ds_psd.psd_ref.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD ref', color='k', flip_xaxis=True, line_width=3)*\
@@ -371,7 +398,93 @@ def plot_psd_scores(filename):
     fig2 = ds_psd.coherence.hvplot.line(x='wavelenght', logx=True, logy=False, label='Coherence', color='k', flip_xaxis=True, line_width=2)*\
     (ds_psd.psd_diff/ds_psd.psd_ref).hvplot.line(x='wavelenght', logx=True, logy=False, label='PSD err/ PSD ref', color='r', flip_xaxis=True, line_width=2)
     
+    return (ds_psd.effective_resolution.hvplot.quadmesh(x='lon', y='lat', clim=(100, 500), cmap='Spectral_r', projection=ccrs.PlateCarree(), coastline=True) +\
+ds_psd.nb_segment.hvplot.quadmesh(x='lon', y='lat', cmap='jet', projection=ccrs.PlateCarree(), coastline=True) +\
+fig1 + fig2).cols(2) 
+
+
+
+def compute_psd_scores_current(ds_interp, output_filename, lenght_scale=np.timedelta64(20, 'D')):
+    
+    logging.info('Segment computation...')
+    delta_t = np.median(np.diff(ds_interp['time']))
+    delta_t_days = (delta_t / np.timedelta64(1, 'D')).astype(np.float64)
+    npt = int(lenght_scale / delta_t)
+    
+    ds_interp['complex_current_drifter'] = (("time"), ds_interp['EWCT'].data + 1j* ds_interp['NSCT'].data)
+    ds_interp['complex_current_maps'] = (("time"), ds_interp['ugos_interpolated'].data + 1j* ds_interp['vgos_interpolated'].data)
+    
+    list_of_lon = []
+    list_of_lat = []
+    list_of_udrifter = []
+    list_of_umaps = []
+    
+    for sensor_id in np.unique(ds_interp['sensor_id']):
+        ds_sel = ds_interp.where(ds_interp['sensor_id'] == sensor_id, drop=True)
+        lon_segment, lat_segment, udfriter_segment, umap_segment = compute_segment(ds_sel, npt, 
+                                                                              ref_var_name='complex_current_drifter', 
+                                                                              study_var_name='complex_current_maps',
+                                                                              max_time_gap=np.timedelta64(10, 'h'),
+                                                                              segment_overlapping=0.1)
+        del ds_sel
+        if (udfriter_segment.size > 0) and (umap_segment.size > 0):
+            list_of_lon.append(lon_segment)
+            list_of_lat.append(lat_segment)
+            list_of_udrifter.append(udfriter_segment)
+            list_of_umaps.append(umap_segment)
+        del lon_segment, lat_segment, udfriter_segment, umap_segment
+            
+    lon_segment = np.concatenate(list_of_lon)
+    lat_segment = np.concatenate(list_of_lat)
+    udfriter_segment = np.concatenate(list_of_udrifter)
+    umap_segment = np.concatenate(list_of_umaps)
+    
+    logging.info('Spectral analysis...')
+    wavenumber, vlat, vlon, nb_segment, psd_ref, psd_study, psd_diff, coherence, cross_spectrum = spectral_computation(lon_segment,
+                                                                                                                       lat_segment,
+                                                                                                                       udfriter_segment,
+                                                                                                                       umap_segment, 
+                                                                                                                       delta_t_days,
+                                                                                                                       npt
+                                                                                                                      )
+    logging.info('Saving ouput...')
+    write_psd_output(output_filename, wavenumber, vlat, vlon, nb_segment, psd_ref, psd_study, psd_diff, coherence, cross_spectrum, one_sided=False)
+    
+    
+def plot_psd_scores_currents(filename):
+    
+    ds_psd = xr.open_dataset(filename)
+    
+    ds_clockwise = ds_psd.where(ds_psd['wavenumber'] <= 0., drop=True)
+    ds_counter_clockwise = ds_psd.where(ds_psd['wavenumber'] >= 0., drop=True)
+
+    ds_clockwise['wavenumber'] = np.abs(ds_clockwise['wavenumber'] )
+    ds_clockwise['wavelenght'] = np.abs(1./ds_clockwise['wavenumber'])
+    ds_clockwise['wavelenght'].attrs['units'] = 'days'
+    ds_clockwise = ds_clockwise.assign_coords(wavelenght=ds_clockwise['wavelenght'])
+
+    ds_counter_clockwise['wavenumber'] = np.abs(ds_counter_clockwise['wavenumber'] )
+    ds_counter_clockwise['wavelenght'] = np.abs(1./ds_counter_clockwise['wavenumber'])
+    ds_counter_clockwise['wavelenght'].attrs['units'] = 'days'
+    ds_counter_clockwise = ds_counter_clockwise.assign_coords(wavelenght=ds_counter_clockwise['wavelenght'])
+    
+    
+    
+    fig1 = (ds_clockwise.psd_ref.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD ref (clockwise)', color='k', flip_xaxis=True, line_width=3)*\
+    ds_clockwise.psd_study.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD study (clockwise)', color='r', flip_xaxis=True)*\
+    ds_clockwise.psd_diff.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD err (clockwise)', color='grey', flip_xaxis=True)*\
+    ds_counter_clockwise.psd_ref.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD ref (counterclockwise)', line_dash='dashed', color='k', flip_xaxis=True, line_width=3)*\
+    ds_counter_clockwise.psd_study.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD study (counterclockwise)', line_dash='dashed', color='r', flip_xaxis=True)*\
+    ds_counter_clockwise.psd_diff.hvplot.line(x='wavelenght', logx=True, logy=True, label='PSD err (counterclockwise)', line_dash='dashed', color='grey', flip_xaxis=True)).opts(legend_position='bottom_left')
+    
+    fig2 = (ds_clockwise.coherence.hvplot.line(x='wavelenght', logx=True, logy=False, label='Coherence (clockwise) ', color='k', flip_xaxis=True, line_width=2, ylim=(0, 1))*\
+    (ds_clockwise.psd_diff/ds_clockwise.psd_ref).hvplot.line(x='wavelenght', logx=True, logy=False, label='PSD err/ PSD ref (clockwise)', color='r', flip_xaxis=True, line_width=2, ylim=(0, 1))*\
+    ds_counter_clockwise.coherence.hvplot.line(x='wavelenght', logx=True, logy=False, label='Coherence (counterclockwise) ', color='k', flip_xaxis=True, line_width=2, line_dash='dashed', ylim=(0, 1))*\
+    (ds_counter_clockwise.psd_diff/ds_clockwise.psd_ref).hvplot.line(x='wavelenght', logx=True, logy=False, label='PSD err/ PSD ref (counterclockwise)', color='r', flip_xaxis=True, line_width=2, line_dash='dashed', ylim=(0, 1))).opts(legend_position='bottom_left')
+    
     return (ds_psd.effective_resolution.hvplot.quadmesh(x='lon', y='lat', clim=(100, 500), cmap='jet') +\
 ds_psd.nb_segment.hvplot.quadmesh(x='lon', y='lat', cmap='jet') +\
-fig1 + fig2).cols(2) 
+fig1+fig2).cols(2) 
+
+
             

@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import xarray as xr
 import cartopy.crs as ccrs
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 
 def plot_maps(dataset, title=''):
     
@@ -14,16 +15,21 @@ def display_identification(ace, ce, lon_min=-180, lon_max=180, lat_min=-80, lat_
     # https://py-eddy-tracker.readthedocs.io/en/latest/python_module/02_eddy_identification/pet_display_id.html#sphx-glr-python-module-02-eddy-identification-pet-display-id-py
     
     fig = plt.figure(figsize=(15, 8))
-    ax = fig.add_axes([0.03, 0.03, 0.90, 0.94])
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.coastlines()
     ax.set_aspect("equal")
-    ax.set_xlim(lon_min, lon_max)
-    ax.set_ylim(lat_min, lat_max)
     kwargs = dict(extern_only=True, color="k", lw=1)
-    ace.display(ax, **kwargs), ce.display(ax, **kwargs)
-    ace.filled(ax, "amplitude", cmap="magma_r", vmin=0, vmax=0.5)
-    m = ce.filled(ax, "amplitude", cmap="magma_r", vmin=0, vmax=0.5)
+    ace.display(ax, transform=ccrs.PlateCarree(), **kwargs), ce.display(ax, transform=ccrs.PlateCarree(), **kwargs)
+    ace.filled(ax, "amplitude", cmap="magma_r", vmin=0, vmax=0.5, transform=ccrs.PlateCarree())
+    m = ce.filled(ax, "amplitude", cmap="magma_r", vmin=0, vmax=0.5, transform=ccrs.PlateCarree())
     colorbar = plt.colorbar(m, cax=ax.figure.add_axes([0.95, 0.03, 0.02, 0.94]))
     colorbar.set_label("Amplitude (m)")
+    ax.set_xticks([-180, -120, 60, 0, 60, 120, 180.], crs=ccrs.PlateCarree())
+    ax.set_yticks([-90, -60, -30, 0, 30, 60, 90], crs=ccrs.PlateCarree())
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
     
     plt.show()
     
@@ -146,21 +152,19 @@ def plot_map_scores(filename):
     ds_score = xr.open_dataset(filename, group='diff')
     rmse_map = ds_score['rmse']
     error_variance_map = ds_score['variance']
-    std_alongtrack = np.sqrt(error_variance_map)
     
     ds_score = xr.open_dataset(filename, group='alongtrack')
     rms_alongtrack = ds_score['rms']
     variance_alongtrack = ds_score['variance']
     mean_alongtrack = ds_score['mean']
+    std_alongtrack = np.sqrt(variance_alongtrack)
     
     ds_score = xr.open_dataset(filename, group='maps')
     mean_map = ds_score['mean']
     
-    
-    
     rmse_score = 1. - rmse_map/rms_alongtrack
     rmse_score.name = 'rmse_score'
-    
+         
     variance_score = 1. - error_variance_map/variance_alongtrack
     variance_score.name = 'variance_score'
     
@@ -174,10 +178,10 @@ def plot_map_scores(filename):
     vmin_normalized_bias = np.nanpercentile(normalized_bias, 5)
     vmax_normalized_bias = np.nanpercentile(normalized_bias, 95)
     
-    return (rmse_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='RMSE score') + \
-            variance_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='Variance score') + \
-            bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_bias, vmax_bias), cmap='coolwarm', title='Bias') +\
-            normalized_bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_normalized_bias, vmax_normalized_bias), cmap='coolwarm', title='Normalized Bias')
+    return (rmse_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='RMSE score', projection=ccrs.PlateCarree(), coastline=True) + \
+            variance_score.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='Variance score', projection=ccrs.PlateCarree(), coastline=True) + \
+            bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_bias, vmax_bias), cmap='coolwarm', title='Bias', projection=ccrs.PlateCarree(), coastline=True) +\
+            normalized_bias.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_normalized_bias, vmax_normalized_bias), cmap='coolwarm', title='Normalized Bias', projection=ccrs.PlateCarree(), coastline=True)
            ).cols(2)
 
 
@@ -186,12 +190,12 @@ def plot_timeseries_scores(filename):
     ds_score = xr.open_dataset(filename, group='diff')
     rmse_map = ds_score['rms']
     error_variance_map = ds_score['variance']
-    std_alongtrack = np.sqrt(error_variance_map)
     
     ds_score = xr.open_dataset(filename, group='alongtrack')
     rms_alongtrack = ds_score['rms']
     variance_alongtrack = ds_score['variance']
     mean_alongtrack = ds_score['mean']
+    std_alongtrack = np.sqrt(variance_alongtrack)
     
     ds_score = xr.open_dataset(filename, group='maps')
     mean_map = ds_score['mean']
@@ -214,5 +218,78 @@ def plot_timeseries_scores(filename):
             variance_score.hvplot.line(x='time', title='Variance score', ylim=(0, 1), grid=True, color='royalblue') + \
             bias.hvplot.line(x='time', title='Bias', grid=True, color='mediumaquamarine') +\
             normalized_bias.hvplot.line(x='time', title='Normalized Bias', grid=True, color='salmon')
+           ).cols(2)
+
+
+
+def plot_map_scores_currents(filename):
+    
+    ds_score = xr.open_dataset(filename, group='u_diff')
+    rmse_map_u = ds_score['rmse']
+    error_variance_map_u = ds_score['variance']
+    
+    ds_score = xr.open_dataset(filename, group='u_drifter')
+    rms_drifter_u = ds_score['rms']
+    variance_drifter_u = ds_score['variance']
+    mean_drifter_u = ds_score['mean']
+    std_drifter_u = np.sqrt(variance_drifter_u)
+    
+    ds_score = xr.open_dataset(filename, group='u_maps')
+    mean_map_u = ds_score['mean']
+    
+    rmse_score_u = 1. - rmse_map_u/rms_drifter_u
+    rmse_score_u.name = 'rmse_score_u'
+         
+    variance_score_u = 1. - error_variance_map_u/variance_drifter_u
+    variance_score_u.name = 'variance_score_u'
+    
+    bias_u = mean_map_u - mean_drifter_u
+    bias_u.name = 'bias_u'
+    vmin_bias_u = np.nanpercentile(bias_u, 5)
+    vmax_bias_u = np.nanpercentile(bias_u, 95)
+    
+    normalized_bias_u = (mean_map_u - mean_drifter_u)/std_drifter_u
+    normalized_bias_u.name = 'normalized_bias_u'
+    vmin_normalized_bias_u = np.nanpercentile(normalized_bias_u, 5)
+    vmax_normalized_bias_u = np.nanpercentile(normalized_bias_u, 95)
+    
+    
+    ds_score = xr.open_dataset(filename, group='v_diff')
+    rmse_map_v = ds_score['rmse']
+    error_variance_map_v = ds_score['variance']
+    
+    ds_score = xr.open_dataset(filename, group='v_drifter')
+    rms_drifter_v = ds_score['rms']
+    variance_drifter_v = ds_score['variance']
+    mean_drifter_v = ds_score['mean']
+    std_drifter_v = np.sqrt(variance_drifter_v)
+    
+    ds_score = xr.open_dataset(filename, group='v_maps')
+    mean_map_v = ds_score['mean']
+    
+    rmse_score_v = 1. - rmse_map_v/rms_drifter_v
+    rmse_score_v.name = 'rmse_score_v'
+         
+    variance_score_v = 1. - error_variance_map_v/variance_drifter_v
+    variance_score_v.name = 'variance_score_v'
+    
+    bias_v = mean_map_v - mean_drifter_v
+    bias_v.name = 'bias_v'
+    vmin_bias_v = np.nanpercentile(bias_v, 5)
+    vmax_bias_v = np.nanpercentile(bias_v, 95)
+    
+    normalized_bias_v = (mean_map_v - mean_drifter_v)/std_drifter_v
+    normalized_bias_v.name = 'normalized_bias_u'
+    vmin_normalized_bias_v = np.nanpercentile(normalized_bias_v, 5)
+    vmax_normalized_bias_v = np.nanpercentile(normalized_bias_v, 95)
+    
+    return (rmse_score_u.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='RMSE score U', projection=ccrs.PlateCarree(), coastline=True) + \
+            rmse_score_v.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='RMSE score V', projection=ccrs.PlateCarree(), coastline=True) + \
+            variance_score_u.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='Variance score U', projection=ccrs.PlateCarree(), coastline=True) + \
+            variance_score_v.hvplot.quadmesh(x='lon', y='lat', clim=(0, 1), cmap='RdYlGn', title='Variance score V', projection=ccrs.PlateCarree(), coastline=True) + \
+            bias_u.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_bias_u, vmax_bias_v), cmap='coolwarm', title='Bias U', projection=ccrs.PlateCarree(), coastline=True) +\
+            bias_v.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_bias_v, vmax_bias_v), cmap='coolwarm', title='Bias V', projection=ccrs.PlateCarree(), coastline=True) +\
+            normalized_bias_u.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_normalized_bias_u, vmax_normalized_bias_u), cmap='coolwarm', title='Normalized Bias U', projection=ccrs.PlateCarree(), coastline=True) +\
+            normalized_bias_v.hvplot.quadmesh(x='lon', y='lat', clim=(vmin_normalized_bias_v, vmax_normalized_bias_v), cmap='coolwarm', title='Normalized Bias V', projection=ccrs.PlateCarree(), coastline=True)
            ).cols(2)
     

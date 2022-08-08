@@ -189,3 +189,92 @@ def compute_stats_timeseries(ds_interp,
     logging.info(f'  STD RMSE Score = {std_rmse}')
     
     return mean_rmse, std_rmse
+
+
+
+
+
+
+def compute_current_stats_map(ds, 
+                      output_filename,
+                      lon_bins=np.arange(0, 360, 3), 
+                      lat_bins=np.arange(-90, 93, 3)
+                      ):
+                      
+    ncfile = netCDF4.Dataset(output_filename,'w')
+    
+    binning = pyinterp.Binning2D(pyinterp.Axis(lon_bins, is_circle=True), pyinterp.Axis(lat_bins))
+
+    # binning drifter U
+    binning.push(ds.longitude, ds.latitude, ds.EWCT, simple=True)
+    write_stat(ncfile, 'u_drifter', binning)
+    binning.clear()
+
+    # binning U map interp
+    binning.push(ds.longitude, ds.latitude, ds.ugos_interpolated, simple=True)
+    write_stat(ncfile, 'u_maps', binning)
+    binning.clear()
+
+    # binning diff u_drifter-u_map
+    binning.push(ds.longitude, ds.latitude, ds.EWCT - ds.ugos_interpolated, simple=True)
+    write_stat(ncfile, 'u_diff', binning)
+    binning.clear()
+
+    # add rmse
+    diff2 = (ds.EWCT - ds.ugos_interpolated)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['u_diff'].createVariable('rmse', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    # add rms Udrifter
+    diff2 = (ds.EWCT)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['u_drifter'].createVariable('rms', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    # add rms Umap interp
+    diff2 = (ds.ugos_interpolated)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['u_maps'].createVariable('rms', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    
+    
+    
+    # binning drifter V
+    binning.push(ds.longitude, ds.latitude, ds.NSCT, simple=True)
+    write_stat(ncfile, 'v_drifter', binning)
+    binning.clear()
+
+    # binning V map interp
+    binning.push(ds.longitude, ds.latitude, ds.vgos_interpolated, simple=True)
+    write_stat(ncfile, 'v_maps', binning)
+    binning.clear()
+
+    # binning diff v_drifter-u_map
+    binning.push(ds.longitude, ds.latitude, ds.NSCT - ds.vgos_interpolated, simple=True)
+    write_stat(ncfile, 'v_diff', binning)
+    binning.clear()
+
+    # add rmse
+    diff2 = (ds.NSCT - ds.vgos_interpolated)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['v_diff'].createVariable('rmse', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    # add rms Vdrifter
+    diff2 = (ds.NSCT)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['v_drifter'].createVariable('rms', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    # add rms Vmap interp
+    diff2 = (ds.vgos_interpolated)**2
+    binning.push(ds.longitude, ds.latitude, diff2, simple=True)
+    var = ncfile.groups['v_maps'].createVariable('rms', binning.variable('mean').dtype, ('lat','lon'), zlib=True)
+    var[:, :] = np.sqrt(binning.variable('mean')).T 
+    
+    
+    ncfile.close()
+    
+    logging.info(f'  Results saved in: {output_filename}')
