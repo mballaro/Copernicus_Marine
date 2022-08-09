@@ -1,6 +1,6 @@
 # Copernicus_Marine
 ## Experimental tools to play with CMEMS data
-![bandeau](demo_cmems_diags\notebooks\figures\logos.jpg)
+![bandeau](/demo_cmems_diags/notebooks/figures/logos.jpg)
 
 :computer: _**How to get started ?**_
 ```
