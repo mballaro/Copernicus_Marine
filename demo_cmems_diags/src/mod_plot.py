@@ -146,6 +146,47 @@ def compare_identification_stats(ac1, c1, title1, ac2, c2, title2):
     
     
     
+def display_matching(ace1, ce1, i_ace1, i_ce1, ace2, ce2, i_ace2, i_ce2, lon_min=-180, lon_max=180, lat_min=-80, lat_max=90):
+    
+    # https://py-eddy-tracker.readthedocs.io/en/latest/python_module/02_eddy_identification/pet_display_id.html#sphx-glr-python-module-02-eddy-identification-pet-display-id-py
+    kwargs_a_1 = dict(
+    lw=1.5, label="Anticyclonic GLORYS12v1 ({nb_obs} eddies)", ref=-10, color="lime"
+    )
+    kwargs_c_1 = dict(lw=1.5, label="Cyclonic GLORYS12v1 ({nb_obs} eddies)", ref=-10, color="magenta")
+    kwargs_a_2 = dict(
+        lw=1.5, label="Anticyclonic DUACS-DT2021 ({nb_obs} eddies)", ref=-10, color="k"
+    )
+    kwargs_c_2 = dict(lw=1.5, label="Cyclonic DUACS-DT2021 ({nb_obs} eddies)", ref=-10, color="aqua")
+
+
+    fig = plt.figure(figsize=(15, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.coastlines()
+    ax.set_aspect("equal")
+    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+
+    kwargs = dict(extern_only=True, color="k", lw=1)
+    
+    ace1.index(i_ace1).display(ax, transform=ccrs.PlateCarree(), **kwargs_a_1)
+    ce1.index(i_ce1).display(ax, transform=ccrs.PlateCarree(), **kwargs_c_1)
+    ace2.index(i_ace2).display(ax, transform=ccrs.PlateCarree(), **kwargs_a_2)
+    ce2.index(i_ce2).display(ax, transform=ccrs.PlateCarree(), **kwargs_c_2)
+    
+    if lon_min > 180:
+        lon_min = lon_min- 360.
+    if lon_max > 180:
+        lon_max = lon_max - 360.
+    ax.set_xticks(np.linspace(lon_min, lon_max, 5), crs=ccrs.PlateCarree())
+    ax.set_yticks(np.linspace(lat_min, lat_max, 5), crs=ccrs.PlateCarree())
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    ax.legend()
+    plt.show()
+    
+    
+    
 ### PLOT SCORE
 def plot_map_scores(filename):
     
